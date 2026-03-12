@@ -11,6 +11,7 @@ import {
 export const shelbyClient = new ShelbyClient({
   network: Network.TESTNET,
   apiKey: import.meta.env.VITE_SHELBY_API_KEY,
+  rpcEndpoint: "https://api.testnet.shelby.xyz/shelby",
 });
 
 export async function encodeJsonBlob(payload: unknown): Promise<BlobCommitments & { data: Uint8Array }> {
@@ -65,4 +66,3 @@ export async function uploadBlob(args: {
     blobData: args.data,
   });
 }
-
