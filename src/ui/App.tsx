@@ -21,7 +21,7 @@ export const App = () => {
   const [game, setGame] = useState<GameState | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
-  const { account, signAndSubmitTransaction } = useWallet();
+  const { account, signAndSubmitTransaction, wallets, connect, disconnect } = useWallet();
 
   useEffect(() => {
     if (mode && !game) {
@@ -165,14 +165,45 @@ export const App = () => {
     <div className="app-root">
       <header className="header">
         <div>
+          <button
+            onClick={() => {
+              if (window.history.length > 1) {
+                window.history.back();
+              } else {
+                window.location.href = "/";
+              }
+            }}
+          >
+            ← Geri
+          </button>
           <h1>ShelbyWars</h1>
           <p className="subtitle">
             Oyun ID: <code>{game.id}</code> • Mod: {mode === "PVE_AI" ? "AI" : "PvP"}
           </p>
         </div>
         <div className="header-actions">
+          <div className="wallet-info">
+            {account ? (
+              <>
+                <span>
+                  Cüzdan:{" "}
+                  <code>
+                    {account.address.slice(0, 6)}...{account.address.slice(-4)}
+                  </code>
+                </span>
+                <button onClick={() => disconnect()}>Bağlantıyı Kes</button>
+              </>
+            ) : (
+              <>
+                <span>Cüzdan bağlı değil</span>
+                {wallets.length > 0 && (
+                  <button onClick={() => connect(wallets[0].name)}>Cüzdan Bağla</button>
+                )}
+              </>
+            )}
+          </div>
           <button onClick={() => startNewGame(mode ?? "PVE_AI")}>Yeniden Başlat</button>
-          <button onClick={autoPlayTurn} disabled={isUploading || !!game.finishedAt}>
+          <button onClick={autoPlayTurn} disabled={isUploading || !!game.finishedAt || !account}>
             Sıradaki Hamleyi Otomatik Oyna
           </button>
         </div>
@@ -184,7 +215,8 @@ export const App = () => {
           isActive={game.turn.activePlayer === "PLAYER_TWO"}
           onToggleAuto={() => toggleAuto("PLAYER_TWO")}
           onPlayCard={(cardId) => playCard("PLAYER_TWO", cardId)}
-          isUploading={isUploading}
+          isUploading={isUploading || !account}
+          requireWallet={!account}
         />
 
         <div className="center-info">
@@ -209,12 +241,18 @@ export const App = () => {
           isActive={game.turn.activePlayer === "PLAYER_ONE"}
           onToggleAuto={() => toggleAuto("PLAYER_ONE")}
           onPlayCard={(cardId) => playCard("PLAYER_ONE", cardId)}
-          isUploading={isUploading}
+          isUploading={isUploading || !account}
+          requireWallet={!account}
         />
       </main>
 
       <section className="history">
         <h2>Hamle Geçmişi (Shelby Hot Storage)</h2>
+        {!account && (
+          <p className="warning">
+            Hamlelerin Shelby Explorer'da görünmesi için önce bir Aptos cüzdanı bağlamalısın.
+          </p>
+        )}
         {!game.history.length && <p>Henüz hamle yok.</p>}
         {game.history.map((move) => (
           <div key={move.turnNumber} className="history-item">
@@ -240,11 +278,19 @@ interface PlayerPanelProps {
   player: GameState["players"]["PLAYER_ONE"];
   isActive: boolean;
   isUploading: boolean;
+  requireWallet?: boolean;
   onToggleAuto: () => void;
   onPlayCard: (cardId: string) => void;
 }
 
-const PlayerPanel = ({ player, isActive, onToggleAuto, onPlayCard, isUploading }: PlayerPanelProps) => {
+const PlayerPanel = ({
+  player,
+  isActive,
+  onToggleAuto,
+  onPlayCard,
+  isUploading,
+  requireWallet,
+}: PlayerPanelProps) => {
   return (
     <section className={`player-panel ${isActive ? "active" : ""}`}>
       <div className="player-header">
@@ -256,6 +302,7 @@ const PlayerPanel = ({ player, isActive, onToggleAuto, onPlayCard, isUploading }
         </div>
         <div className="player-controls">
           <button onClick={onToggleAuto}>{player.isAuto ? "Oto: Açık" : "Oto: Kapalı"}</button>
+          {requireWallet && <span className="player-wallet-warning">Cüzdan bağla</span>}
         </div>
       </div>
       <div className="hand">
