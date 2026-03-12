@@ -28,7 +28,7 @@ export function createNewGame(mode: GameMode): GameState {
 
   const playerOne: PlayerState = {
     id: "PLAYER_ONE",
-    name: mode === "PVE_AI" ? "Sen" : "Oyuncu 1",
+    name: mode === "PVE_AI" ? "You" : "Player 1",
     health: MAX_HEALTH,
     deck: deck1,
     hand: deck1.slice(0, 5),
@@ -38,7 +38,7 @@ export function createNewGame(mode: GameMode): GameState {
 
   const playerTwo: PlayerState = {
     id: "PLAYER_TWO",
-    name: mode === "PVE_AI" ? "Shelby AI" : "Oyuncu 2",
+    name: mode === "PVE_AI" ? "Shelby AI" : "Player 2",
     health: MAX_HEALTH,
     deck: deck2,
     hand: deck2.slice(0, 5),
@@ -81,9 +81,43 @@ export function applyMove(
 
   const defenderCard = pickRandomCard(defender.hand) ?? defender.hand[0] ?? attackerCard;
 
-  const multiplier = computeElementMultiplier(attackerCard.element, defenderCard.element);
-  const baseDamage = attackerCard.power;
-  const finalDamage = Math.round(baseDamage * multiplier);
+  // lightweight effect system (purely derived from chosen cards)
+  let baseDamage = attackerCard.power;
+
+  // Card-specific bonus randomness (non-crypto; for gameplay only)
+  if (attackerCard.id === "fire_meteor") {
+    if (Math.random() < 0.35) baseDamage += 1;
+  }
+  if (attackerCard.id === "lightning_chain") {
+    baseDamage += Math.random() < 0.5 ? 1 : 0;
+  }
+  if (attackerCard.id === "wild_glitch") {
+    baseDamage += Math.floor(Math.random() * 6); // +0..+5
+  }
+  if (attackerCard.id === "shadow_fang" && defender.health < 10) {
+    baseDamage += 2;
+  }
+
+  let multiplier = computeElementMultiplier(attackerCard.element, defenderCard.element);
+  if (attackerCard.id === "mystic_sigil") {
+    // ignore disadvantage
+    multiplier = Math.max(1, multiplier);
+  }
+  if (attackerCard.id === "wild_shelby_core") {
+    multiplier *= 1.1;
+  }
+
+  let finalDamage = Math.round(baseDamage * multiplier);
+
+  // Defensive effects based on defender's chosen card
+  let shield = 0;
+  if (defenderCard.id === "ice_barrier" || defenderCard.id === "shadow_veil") {
+    shield = 2;
+  }
+  if (defenderCard.id === "ice_spike") {
+    shield = 1;
+  }
+  finalDamage = Math.max(0, finalDamage - shield);
 
   const move: MoveRecord = {
     gameId: state.id,

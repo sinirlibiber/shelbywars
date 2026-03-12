@@ -1,6 +1,6 @@
 import { ShelbyClient, ShelbyBlobClient } from "@shelby-protocol/sdk/browser";
 import { Network } from "@aptos-labs/ts-sdk";
-import type { MoveRecord, GameResult } from "../game/types";
+import type { GameLog } from "../game/types";
 import {
   createDefaultErasureCodingProvider,
   generateCommitments,
@@ -24,62 +24,18 @@ export async function encodeJsonBlob(payload: unknown): Promise<BlobCommitments 
   return { ...commitments, data };
 }
 
-export async function buildRegisterMovePayload(args: {
+export async function buildRegisterGameLogPayload(args: {
   accountAddress: string;
   gameId: string;
-  move: MoveRecord;
+  log: GameLog;
 }): Promise<{
   payload: ReturnType<typeof ShelbyBlobClient.createRegisterBlobPayload>;
   blobName: string;
   data: Uint8Array;
 }> {
-  const blobName = `${args.gameId}-move-${args.move.turnNumber}.json`;
+  const blobName = `${args.gameId}-gamelog.json`;
 
-  const hotStorageRecord = {
-    type: "shelbywars_move",
-    storage: "hot" as const,
-    protocol: "ShelbyWars",
-    gameId: args.gameId,
-    move: args.move,
-  };
-
-  const commitments = await encodeJsonBlob(hotStorageRecord);
-
-  const rawSize = Number(commitments.raw_data_size);
-  const totalChunksets = Number(expectedTotalChunksets(commitments.raw_data_size));
-  const expirationMicros = (1000 * 60 * 60 * 24 * 30 + Date.now()) * 1000;
-
-  const payload = ShelbyBlobClient.createRegisterBlobPayload({
-    account: args.accountAddress,
-    blobName,
-    blobMerkleRoot: commitments.blob_merkle_root,
-    numChunksets: totalChunksets,
-    expirationMicros,
-    blobSize: rawSize,
-    encoding: 0,
-  });
-
-  return { payload, blobName, data: commitments.data };
-}
-
-export async function buildRegisterResultPayload(args: {
-  accountAddress: string;
-  result: GameResult;
-}): Promise<{
-  payload: ReturnType<typeof ShelbyBlobClient.createRegisterBlobPayload>;
-  blobName: string;
-  data: Uint8Array;
-}> {
-  const blobName = `${args.result.gameId}-result.json`;
-
-  const hotStorageRecord = {
-    type: "shelbywars_result",
-    storage: "hot" as const,
-    protocol: "ShelbyWars",
-    result: args.result,
-  };
-
-  const commitments = await encodeJsonBlob(hotStorageRecord);
+  const commitments = await encodeJsonBlob(args.log);
 
   const rawSize = Number(commitments.raw_data_size);
   const totalChunksets = Number(expectedTotalChunksets(commitments.raw_data_size));

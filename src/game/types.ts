@@ -52,3 +52,17 @@ export interface GameResult {
   finishedAt: number;
 }
 
+export interface GameLog {
+  type: "shelbywars_game_log";
+  storage: "hot";
+  protocol: "ShelbyWars";
+  version: 1;
+  gameId: string;
+  mode: GameMode;
+  startedAt: number;
+  finishedAt: number;
+  players: Array<{ id: PlayerId; name: string }>;
+  moves: MoveRecord[];
+  result: GameResult;
+}
+

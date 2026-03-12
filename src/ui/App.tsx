@@ -4,8 +4,9 @@ import type { GameMode, PlayerId } from "../game/types";
 import { createNewGame, applyMove } from "../game/engine";
 import { ELEMENT_COLORS, ELEMENT_LABELS } from "../game/cards";
 import type { GameState } from "../game/engine";
-import { buildRegisterMovePayload, buildRegisterResultPayload, uploadBlob } from "../shelby/client";
+import { buildRegisterGameLogPayload, uploadBlob } from "../shelby/client";
 import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
+import type { GameLog } from "../game/types";
 
 const aptosClient = new Aptos(
   new AptosConfig({
@@ -20,6 +21,8 @@ export const App = () => {
   const [mode, setMode] = useState<GameMode | null>(null);
   const [game, setGame] = useState<GameState | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [savedTx, setSavedTx] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const { account, signAndSubmitTransaction, wallets, connect, disconnect } = useWallet();
 
@@ -33,6 +36,7 @@ export const App = () => {
     setMode(nextMode);
     setGame(createNewGame(nextMode));
     setStatus(null);
+    setSavedTx(null);
   };
 
   const toggleAuto = (id: PlayerId) => {
@@ -49,68 +53,75 @@ export const App = () => {
     });
   };
 
-  const handleMoveOnChain = async (nextGame: GameState, moveResult: ReturnType<typeof applyMove>) => {
+  const saveGameToShelby = async () => {
+    if (!game || !game.finishedAt) return;
     if (!account) {
-      setStatus("Cüzdan bağlı değil. Hamle local oynandı, zincire yazılmadı.");
-      setGame(nextGame);
+      setStatus("Wallet not connected. Connect your wallet to save the match to Shelby.");
+      return;
+    }
+    if (savedTx) {
+      setStatus(`Already saved. Tx: ${savedTx}`);
       return;
     }
 
-    setIsUploading(true);
+    setIsSaving(true);
     try {
-      const registerMove = await buildRegisterMovePayload({
-        accountAddress: account.address,
-        gameId: nextGame.id,
-        move: moveResult.move,
-      });
+      const p1 = game.players.PLAYER_ONE;
+      const p2 = game.players.PLAYER_TWO;
+      const winner =
+        p1.health === p2.health ? "DRAW" : p1.health > p2.health ? "PLAYER_ONE" : "PLAYER_TWO";
+      const loser = winner === "DRAW" ? "NONE" : winner === "PLAYER_ONE" ? "PLAYER_TWO" : "PLAYER_ONE";
 
-      const moveTx: InputTransactionData = {
-        data: registerMove.payload,
+      const result = {
+        gameId: game.id,
+        mode: game.mode,
+        winner,
+        loser,
+        totalTurns: game.history.length,
+        startedAt: game.startedAt,
+        finishedAt: game.finishedAt,
+      } as const;
+
+      const log: GameLog = {
+        type: "shelbywars_game_log",
+        storage: "hot",
+        protocol: "ShelbyWars",
+        version: 1,
+        gameId: game.id,
+        mode: game.mode,
+        startedAt: game.startedAt,
+        finishedAt: game.finishedAt,
+        players: [
+          { id: "PLAYER_ONE", name: p1.name },
+          { id: "PLAYER_TWO", name: p2.name },
+        ],
+        moves: game.history,
+        result: result as any,
       };
 
-      const submittedMove = await signAndSubmitTransaction(moveTx);
+      const register = await buildRegisterGameLogPayload({
+        accountAddress: account.address,
+        gameId: game.id,
+        log,
+      });
 
-      await aptosClient.waitForTransaction({ transactionHash: submittedMove.hash });
+      const tx: InputTransactionData = { data: register.payload };
+      const submitted = await signAndSubmitTransaction(tx);
+      await aptosClient.waitForTransaction({ transactionHash: submitted.hash });
 
       await uploadBlob({
         accountAddress: account.address,
-        blobName: registerMove.blobName,
-        data: registerMove.data,
+        blobName: register.blobName,
+        data: register.data,
       });
 
-      if (moveResult.result) {
-        const registerResult = await buildRegisterResultPayload({
-          accountAddress: account.address,
-          result: moveResult.result,
-        });
-
-        const resultTx: InputTransactionData = {
-          data: registerResult.payload,
-        };
-
-        const submittedResult = await signAndSubmitTransaction(resultTx);
-        await aptosClient.waitForTransaction({ transactionHash: submittedResult.hash });
-
-        await uploadBlob({
-          accountAddress: account.address,
-          blobName: registerResult.blobName,
-          data: registerResult.data,
-        });
-
-        setStatus(
-          `Oyun sonucu Shelby'ye kaydedildi. Explorer'da ${submittedResult.hash} ve ${submittedMove.hash} hash'leri ile görebilirsin.`,
-        );
-      } else {
-        setStatus(`Hamle Shelby'ye kaydedildi. Explorer'da ${submittedMove.hash} hash'i ile görebilirsin.`);
-      }
-
-      setGame(nextGame);
-    } catch (error) {
-      console.error(error);
-      setStatus("Shelby'ye kaydederken hata oluştu, hamle local olarak oynandı.");
-      setGame(nextGame);
+      setSavedTx(submitted.hash);
+      setStatus(`Match saved to Shelby Hot Storage. Explorer tx: ${submitted.hash}`);
+    } catch (e) {
+      console.error(e);
+      setStatus("Failed to save match to Shelby. Please try again.");
     } finally {
-      setIsUploading(false);
+      setIsSaving(false);
     }
   };
 
@@ -122,7 +133,7 @@ export const App = () => {
     if (!card) return;
 
     const moveResult = applyMove(game, playerId, card);
-    await handleMoveOnChain(moveResult.next, moveResult);
+    setGame(moveResult.next);
   };
 
   const autoPlayTurn = async () => {
@@ -140,10 +151,10 @@ export const App = () => {
     return (
       <div className="mode-selector">
         <h1 className="title">ShelbyWars</h1>
-        <p className="subtitle">Shelby Protocol üzerinde Web3 kart savaşı</p>
+        <p className="subtitle">A Web3 card battle on Shelby Protocol (Aptos)</p>
         <div className="mode-buttons">
-          <button onClick={() => startNewGame("PVP_LOCAL")}>İki Oyunculu (Aynı Cihaz)</button>
-          <button onClick={() => startNewGame("PVE_AI")}>Bilgisayara Karşı</button>
+          <button onClick={() => startNewGame("PVP_LOCAL")}>Local PvP (Same Device)</button>
+          <button onClick={() => startNewGame("PVE_AI")}>Play vs AI</button>
         </div>
       </div>
     );
@@ -174,11 +185,11 @@ export const App = () => {
               }
             }}
           >
-            ← Geri
+            ← Back
           </button>
           <h1>ShelbyWars</h1>
           <p className="subtitle">
-            Oyun ID: <code>{game.id}</code> • Mod: {mode === "PVE_AI" ? "AI" : "PvP"}
+            Game ID: <code>{game.id}</code> • Mode: {mode === "PVE_AI" ? "AI" : "PvP"}
           </p>
         </div>
         <div className="header-actions">
@@ -186,25 +197,25 @@ export const App = () => {
             {account ? (
               <>
                 <span>
-                  Cüzdan:{" "}
+                  Wallet:{" "}
                   <code>
                     {account.address.slice(0, 6)}...{account.address.slice(-4)}
                   </code>
                 </span>
-                <button onClick={() => disconnect()}>Bağlantıyı Kes</button>
+                <button onClick={() => disconnect()}>Disconnect</button>
               </>
             ) : (
               <>
-                <span>Cüzdan bağlı değil</span>
+                <span>Wallet not connected</span>
                 {wallets.length > 0 && (
-                  <button onClick={() => connect(wallets[0].name)}>Cüzdan Bağla</button>
+                  <button onClick={() => connect(wallets[0].name)}>Connect Wallet</button>
                 )}
               </>
             )}
           </div>
-          <button onClick={() => startNewGame(mode ?? "PVE_AI")}>Yeniden Başlat</button>
-          <button onClick={autoPlayTurn} disabled={isUploading || !!game.finishedAt || !account}>
-            Sıradaki Hamleyi Otomatik Oyna
+          <button onClick={() => startNewGame(mode ?? "PVE_AI")}>Restart</button>
+          <button onClick={autoPlayTurn} disabled={isUploading || !!game.finishedAt}>
+            Auto-play Next Turn
           </button>
         </div>
       </header>
@@ -221,19 +232,24 @@ export const App = () => {
 
         <div className="center-info">
           <div className="turn-indicator">
-            Tur: {game.turn.turnNumber} • Sıra: {game.turn.activePlayer === "PLAYER_ONE" ? p1.name : p2.name}
+            Turn: {game.turn.turnNumber} • Active: {game.turn.activePlayer === "PLAYER_ONE" ? p1.name : p2.name}
           </div>
           {game.finishedAt && (
             <div className="game-over">
-              Oyun Bitti:{" "}
+              Game Over:{" "}
               {p1.health === p2.health
-                ? "Berabere"
+                ? "Draw"
                 : p1.health > p2.health
-                  ? `${p1.name} kazandı`
-                  : `${p2.name} kazandı`}
+                  ? `${p1.name} wins`
+                  : `${p2.name} wins`}
             </div>
           )}
           {status && <div className="status">{status}</div>}
+          {game.finishedAt && (
+            <button onClick={saveGameToShelby} disabled={isSaving || !account || !!savedTx}>
+              {savedTx ? "Saved ✅" : isSaving ? "Saving..." : "Save match to Shelby (1 signature)"}
+            </button>
+          )}
         </div>
 
         <PlayerPanel
@@ -247,30 +263,77 @@ export const App = () => {
       </main>
 
       <section className="history">
-        <h2>Hamle Geçmişi (Shelby Hot Storage)</h2>
-        {!account && (
-          <p className="warning">
-            Hamlelerin Shelby Explorer'da görünmesi için önce bir Aptos cüzdanı bağlamalısın.
-          </p>
-        )}
-        {!game.history.length && <p>Henüz hamle yok.</p>}
+        <h2>Match Log (local)</h2>
+        {!game.history.length && <p>No moves yet.</p>}
         {game.history.map((move) => (
           <div key={move.turnNumber} className="history-item">
-            <span className="turn">Tur {move.turnNumber}</span>
+            <span className="turn">Turn {move.turnNumber}</span>
             <span>
               {move.attacker === "PLAYER_ONE" ? p1.name : p2.name}{" "}
-              <strong>{move.attackerCard.name}</strong> ile{" "}
-              {move.defender === "PLAYER_ONE" ? p1.name : p2.name} üzerinde{" "}
-              <strong>{move.finalDamage}</strong> hasar verdi (
-              {ELEMENT_LABELS[move.attackerCard.element]} → {ELEMENT_LABELS[move.defenderCard.element]} x
+              used <strong>{move.attackerCard.name}</strong> on{" "}
+              {move.defender === "PLAYER_ONE" ? p1.name : p2.name} for{" "}
+              <strong>{move.finalDamage}</strong> damage (
+              {ELEMENT_LABELS[move.attackerCard.element]} → {ELEMENT_LABELS[move.defenderCard.element]} ×
               {move.elementMultiplier.toFixed(1)})
             </span>
           </div>
         ))}
       </section>
 
-      <footer className="footer">Her hamle Shelby hot storage'a JSON blob olarak kaydedilir.</footer>
+      <FAQ />
+      <footer className="footer">Save once at the end: one on-chain tx + one hot storage blob.</footer>
     </div>
+  );
+};
+
+const FAQ = () => {
+  return (
+    <section className="history faq">
+      <h2>FAQ</h2>
+      <details>
+        <summary>How do elements work?</summary>
+        <p>
+          ShelbyWars uses a simple advantage wheel: Fire &gt; Ice &gt; Lightning &gt; Shadow &gt; Mystic &gt; Fire.
+          Advantage deals 1.5× damage, disadvantage deals 0.7×.
+        </p>
+      </details>
+      <details>
+        <summary>What do the card effects do?</summary>
+        <ul>
+          <li>
+            <strong>Meteor Rain</strong>: 35% chance to deal +1 bonus damage.
+          </li>
+          <li>
+            <strong>Chain Lightning</strong>: 50% chance to gain +1 power.
+          </li>
+          <li>
+            <strong>Chain Glitch</strong>: random bonus damage from +0 to +5.
+          </li>
+          <li>
+            <strong>Shadow Fangs</strong>: if the target is below 10 HP, deals +2 bonus damage.
+          </li>
+          <li>
+            <strong>Glacier Barrier / Umbral Veil</strong>: reduces incoming damage by 2 when used as defense.
+          </li>
+          <li>
+            <strong>Ice Spikes</strong>: reduces incoming damage by 1 when used as defense.
+          </li>
+          <li>
+            <strong>Runic Sigil</strong>: ignores disadvantage (minimum multiplier becomes 1.0).
+          </li>
+          <li>
+            <strong>Shelby Core</strong>: adds a small 10% damage boost.
+          </li>
+        </ul>
+      </details>
+      <details>
+        <summary>Why do I only sign once?</summary>
+        <p>
+          Each on-chain registration normally requires a signature. To keep UX smooth, ShelbyWars saves the full match log
+          at the end in a single hot storage JSON blob registered by one transaction.
+        </p>
+      </details>
+    </section>
   );
 };
 
@@ -297,12 +360,12 @@ const PlayerPanel = ({
         <div>
           <h2>{player.name}</h2>
           <p>
-            Can: <strong>{player.health}</strong>
+            HP: <strong>{player.health}</strong>
           </p>
         </div>
         <div className="player-controls">
-          <button onClick={onToggleAuto}>{player.isAuto ? "Oto: Açık" : "Oto: Kapalı"}</button>
-          {requireWallet && <span className="player-wallet-warning">Cüzdan bağla</span>}
+          <button onClick={onToggleAuto}>{player.isAuto ? "Auto: ON" : "Auto: OFF"}</button>
+          {requireWallet && <span className="player-wallet-warning">Connect wallet</span>}
         </div>
       </div>
       <div className="hand">
@@ -325,7 +388,7 @@ const PlayerPanel = ({
             <p className="card-effect">{card.effectText}</p>
           </button>
         ))}
-        {!player.hand.length && <p>Elde kart kalmadı.</p>}
+        {!player.hand.length && <p>No cards left in hand.</p>}
       </div>
     </section>
   );
