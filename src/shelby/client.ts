@@ -1,8 +1,12 @@
 import { ShelbyClient, ShelbyBlobClient } from "@shelby-protocol/sdk/browser";
 import { Network } from "@aptos-labs/ts-sdk";
 import type { MoveRecord, GameResult } from "../game/types";
-import { createDefaultErasureCodingProvider, generateCommitments } from "@shelby-protocol/sdk/browser";
-import type { BlobCommitments } from "@shelby-protocol/sdk/browser";
+import {
+  createDefaultErasureCodingProvider,
+  generateCommitments,
+  expectedTotalChunksets,
+  type BlobCommitments,
+} from "@shelby-protocol/sdk/browser";
 
 export const shelbyClient = new ShelbyClient({
   network: Network.TESTNET,
@@ -45,7 +49,7 @@ export async function buildRegisterMovePayload(args: {
     account: args.accountAddress,
     blobName,
     blobMerkleRoot: commitments.blob_merkle_root,
-    numChunksets: ShelbyBlobClient.expectedTotalChunksets(commitments.raw_data_size),
+    numChunksets: expectedTotalChunksets(commitments.raw_data_size),
     expirationMicros: (1000 * 60 * 60 * 24 * 30 + Date.now()) * 1000,
     blobSize: commitments.raw_data_size,
   });
@@ -76,7 +80,7 @@ export async function buildRegisterResultPayload(args: {
     account: args.accountAddress,
     blobName,
     blobMerkleRoot: commitments.blob_merkle_root,
-    numChunksets: ShelbyBlobClient.expectedTotalChunksets(commitments.raw_data_size),
+    numChunksets: expectedTotalChunksets(commitments.raw_data_size),
     expirationMicros: (1000 * 60 * 60 * 24 * 30 + Date.now()) * 1000,
     blobSize: commitments.raw_data_size,
   });
