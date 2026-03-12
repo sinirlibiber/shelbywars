@@ -64,17 +64,8 @@ export const App = () => {
         move: moveResult.move,
       });
 
-      const patchedMovePayload = {
-        ...registerMove.payload,
-        // @ts-expect-error - runtime patch for last Move argument
-        functionArguments: registerMove.payload.functionArguments?.map((arg: unknown, index: number) =>
-          index === 6 && arg === null ? "0" : arg,
-        ),
-      };
-
       const moveTx: InputTransactionData = {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        data: patchedMovePayload as any,
+        data: registerMove.payload,
       };
 
       const submittedMove = await signAndSubmitTransaction(moveTx);
@@ -93,17 +84,8 @@ export const App = () => {
           result: moveResult.result,
         });
 
-        const patchedResultPayload = {
-          ...registerResult.payload,
-          // @ts-expect-error - runtime patch for last Move argument
-          functionArguments: registerResult.payload.functionArguments?.map((arg: unknown, index: number) =>
-            index === 6 && arg === null ? "0" : arg,
-          ),
-        };
-
         const resultTx: InputTransactionData = {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          data: patchedResultPayload as any,
+          data: registerResult.payload,
         };
 
         const submittedResult = await signAndSubmitTransaction(resultTx);
