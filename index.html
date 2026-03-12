@@ -7,6 +7,12 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Buffer polyfill: Shelby browser SDK global Buffer bekliyor -->
+    <script type="module">
+      import { Buffer } from "https://esm.sh/buffer@6.0.3";
+      // @ts-ignore
+      window.Buffer = window.Buffer || Buffer;
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
   </html>
