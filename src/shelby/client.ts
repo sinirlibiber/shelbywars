@@ -45,8 +45,8 @@ export async function buildRegisterMovePayload(args: {
 
   const commitments = await encodeJsonBlob(hotStorageRecord);
 
-  const rawSize = Number(commitments.raw_data_size);
-  const totalChunksets = Number(expectedTotalChunksets(commitments.raw_data_size));
+  const rawSize = String(commitments.raw_data_size);
+  const totalChunksets = String(expectedTotalChunksets(commitments.raw_data_size));
   const expirationMicros = String((1000 * 60 * 60 * 24 * 30 + Date.now()) * 1000);
 
   const payload = ShelbyBlobClient.createRegisterBlobPayload({
@@ -80,8 +80,8 @@ export async function buildRegisterResultPayload(args: {
 
   const commitments = await encodeJsonBlob(hotStorageRecord);
 
-  const rawSize = Number(commitments.raw_data_size);
-  const totalChunksets = Number(expectedTotalChunksets(commitments.raw_data_size));
+  const rawSize = String(commitments.raw_data_size);
+  const totalChunksets = String(expectedTotalChunksets(commitments.raw_data_size));
   const expirationMicros = String((1000 * 60 * 60 * 24 * 30 + Date.now()) * 1000);
 
   const payload = ShelbyBlobClient.createRegisterBlobPayload({
